@@ -1,0 +1,3 @@
+owner             = "you@example.com"
+github_repository = "your-user/safeops-ai"
+alert_email       = "you@example.com"

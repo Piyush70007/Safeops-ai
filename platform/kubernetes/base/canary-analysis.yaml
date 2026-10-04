@@ -1,0 +1,40 @@
+# Argo Rollouts decides promotion: it measures ONLY the canary pods (their pod-template hash
+# is copied into the metrics by the ServiceMonitor), so healthy old pods cannot hide a bad canary.
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: shop-canary-health
+spec:
+  args:
+    - name: service
+    - name: canary-hash
+  metrics:
+    - name: error-ratio
+      interval: 30s
+      count: 6
+      failureLimit: 1
+      successCondition: len(result) == 0 || result[0] <= 0.02
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.observability.svc:9090
+          query: |
+            sum(rate(shop_http_requests_total{
+              service="{{args.service}}",
+              rollouts_pod_template_hash="{{args.canary-hash}}",
+              status=~"5.."}[1m]))
+            /
+            clamp_min(sum(rate(shop_http_requests_total{
+              service="{{args.service}}",
+              rollouts_pod_template_hash="{{args.canary-hash}}"}[1m])), 1e-9)
+    - name: latency-p95
+      interval: 30s
+      count: 6
+      failureLimit: 1
+      successCondition: len(result) == 0 || result[0] <= 0.5
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.observability.svc:9090
+          query: |
+            histogram_quantile(0.95, sum by (le) (rate(shop_http_request_duration_seconds_bucket{
+              service="{{args.service}}",
+              rollouts_pod_template_hash="{{args.canary-hash}}"}[1m])))

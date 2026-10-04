@@ -1,0 +1,81 @@
+# Generated: identical namespaced rights for the control plane in every app namespace.
+# Secrets are deliberately absent: the control plane cannot read them either.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: safeops-operate, namespace: orders}
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, services]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: safeops-operate, namespace: orders}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: safeops-operate}
+subjects: [{kind: ServiceAccount, name: safeops-control, namespace: safeops}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: safeops-operate, namespace: inventory}
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, services]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: safeops-operate, namespace: inventory}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: safeops-operate}
+subjects: [{kind: ServiceAccount, name: safeops-control, namespace: safeops}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: safeops-operate, namespace: payments}
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, services]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: safeops-operate, namespace: payments}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: safeops-operate}
+subjects: [{kind: ServiceAccount, name: safeops-control, namespace: safeops}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: safeops-operate, namespace: shop}
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, services]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: safeops-operate, namespace: shop}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: safeops-operate}
+subjects: [{kind: ServiceAccount, name: safeops-control, namespace: safeops}]

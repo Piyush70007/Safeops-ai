@@ -1,0 +1,64 @@
+# JEV-lite: the rule-based stand-in for JEV used until the real JEV is connected.
+# It produces the SAME decision schema (automation/controlplane/models.py: Decision), so
+# swapping in the real JEV (JEV_URL) changes nothing downstream.
+# Whatever JEV decides, the policy engine and the autonomy ceiling still apply.
+autonomy_ceiling: canary          # highest autonomy JEV may ever grant (raise deliberately)
+min_confidence_for_patch: 0.7     # below this, JEV only allows diagnosis
+rules:
+  - match: {alertname: ShopHighErrorRate}
+    incident_type: reliability
+    remediation_class: code_patch
+    autonomy: canary
+    approval: engineer
+    ai_suitability: "yes"
+    confidence: 0.9
+    rationale: Symptom alert on a single service with a code-level failure pattern.
+  - match: {alertname: ShopHighLatency}
+    incident_type: reliability
+    remediation_class: code_patch
+    autonomy: patch
+    approval: engineer
+    ai_suitability: "yes"
+    confidence: 0.75
+    rationale: Latency regressions often need profiling; patch only, human promotes.
+  - match: {alertname: ShopPodCrashLooping}
+    incident_type: deployment
+    remediation_class: config_patch
+    autonomy: patch
+    approval: engineer
+    ai_suitability: "yes"
+    confidence: 0.8
+    rationale: Crash loops after a change are usually configuration or startup errors.
+  - match: {alertname: ShopPodNotReady}
+    incident_type: deployment
+    remediation_class: restart
+    autonomy: low_risk_auto
+    approval: none
+    ai_suitability: "yes"
+    confidence: 0.85
+    rationale: A single unready pod with healthy dependencies is a known reversible case.
+  - match: {alertname: ShopDependencyDown}
+    incident_type: reliability
+    remediation_class: none
+    autonomy: diagnose
+    approval: engineer
+    ai_suitability: review
+    confidence: 0.8
+    rationale: Database outages are infrastructure problems; AI explains, humans act.
+  - match: {category: security}
+    incident_type: security
+    remediation_class: none
+    autonomy: observe
+    approval: security_owner
+    ai_suitability: "no"
+    escalation: human
+    confidence: 0.95
+    rationale: Security incidents (secrets, vulnerabilities, misconfiguration) go to humans.
+default:
+  incident_type: unknown
+  remediation_class: none
+  autonomy: diagnose
+  approval: engineer
+  ai_suitability: review
+  confidence: 0.4
+  rationale: No rule matched; diagnose only and ask a human.

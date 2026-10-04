@@ -1,0 +1,42 @@
+# One namespace per service = one blast-radius boundary (RBAC, NetworkPolicy, quotas).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orders
+  labels: {safeops.io/app: "true", pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inventory
+  labels: {safeops.io/app: "true", pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: payments
+  labels: {safeops.io/app: "true", pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels: {safeops.io/app: "true", pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: safeops
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: safeops-workers
+  labels: {pod-security.kubernetes.io/enforce: restricted}

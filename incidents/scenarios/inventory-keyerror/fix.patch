@@ -1,0 +1,29 @@
+diff --git a/app/services/inventory/service.py b/app/services/inventory/service.py
+index eb9114a..565df52 100644
+--- a/app/services/inventory/service.py
++++ b/app/services/inventory/service.py
+@@ -62,7 +62,7 @@ def reserve(engine: Engine, sku: str, quantity: int) -> dict:
+         "sku": sku,
+         "reserved": quantity,
+         "remaining": row["stock"],
+-        "unit_price_cents": _PRICE_CACHE[quantity],
++        "unit_price_cents": _PRICE_CACHE[sku],
+     }
+ 
+ 
+diff --git a/app/services/inventory/tests/test_inventory.py b/app/services/inventory/tests/test_inventory.py
+index 803b75d..6678bfb 100644
+--- a/app/services/inventory/tests/test_inventory.py
++++ b/app/services/inventory/tests/test_inventory.py
+@@ -49,3 +49,11 @@ def test_invalid_input_is_rejected(services):
+     inv = services["inventory"]
+     assert inv.post("/inventory/reserve", json={"sku": "bad sku", "quantity": 1}).status_code == 422
+     assert inv.post("/inventory/reserve", json={"sku": "GEAR-42", "quantity": 0}).status_code == 422
++
++
++def test_every_product_reports_its_own_unit_price(services):
++    """Regression: the unit price was looked up in the cache with the wrong key (KeyError)."""
++    inv = services["inventory"]
++    for sku, price in (("GEAR-42", 1999), ("BOLT-M8", 12), ("PUMP-7", 45900)):
++        body = inv.post("/inventory/reserve", json={"sku": sku, "quantity": 2}).json()
++        assert body["unit_price_cents"] == price

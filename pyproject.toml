@@ -1,0 +1,26 @@
+[project]
+name = "safeops-ai"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["app", "automation", "ai-worker", "tests"]
+pythonpath = [".", "ai-worker"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S101", "S105", "S106"]
+"tests/**" = ["S101", "S105", "S106", "S603", "S607", "E501"]
+"incidents/*" = ["S603", "S607", "S310"]
+"load-tests/*" = ["S310", "S311"]
+"evaluation/*" = ["S603", "S607", "E501", "S106"]
+"verification/*" = ["S603", "S607"]
+"automation/controlplane/adapters.py" = ["S603", "S607"]
+"ai-worker/*" = ["S603", "S607", "S310"]

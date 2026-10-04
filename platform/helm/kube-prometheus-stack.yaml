@@ -1,0 +1,46 @@
+# Prometheus, Alertmanager, Grafana, kube-state-metrics, node-exporter.
+prometheus:
+  prometheusSpec:
+    # pick up our ServiceMonitors and PrometheusRules without Helm-specific labels
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 3d
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: NodePort
+    nodePort: 30300
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.observability.svc:3100
+alertmanager:
+  alertmanagerSpec:
+    secrets: [safeops-admin]       # mounted at /etc/alertmanager/secrets/safeops-admin/
+  config:
+    route:
+      receiver: safeops
+      group_by: [alertname, service]
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      routes:
+        - matchers: ['alertname="Watchdog"']
+          receiver: "null"
+    receivers:
+      - name: "null"
+      - name: safeops
+        webhook_configs:
+          - url: http://safeops-control.safeops.svc:8080/webhooks/alertmanager
+            send_resolved: true
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/secrets/safeops-admin/token

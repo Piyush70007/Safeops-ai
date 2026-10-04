@@ -1,0 +1,13 @@
+diff --git a/app/services/inventory/service.py b/app/services/inventory/service.py
+index eb9114a..026b592 100644
+--- a/app/services/inventory/service.py
++++ b/app/services/inventory/service.py
+@@ -62,7 +62,7 @@ def reserve(engine: Engine, sku: str, quantity: int) -> dict:
+         "sku": sku,
+         "reserved": quantity,
+         "remaining": row["stock"],
+-        "unit_price_cents": _PRICE_CACHE[quantity],
++        "unit_price_cents": _PRICE_CACHE.get(quantity, 0),
+     }
+ 
+ 

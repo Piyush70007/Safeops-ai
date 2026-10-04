@@ -1,0 +1,22 @@
+# Service catalogue: what an incident on a service may touch (its blast radius).
+services:
+  inventory:
+    namespace: inventory
+    writable_paths: ["app/services/inventory/**"]
+    workload: inventory
+    max_autonomy: canary
+  orders:
+    namespace: orders
+    writable_paths: ["app/services/orders/**"]
+    workload: orders
+    max_autonomy: canary
+  payments:
+    namespace: payments
+    writable_paths: ["app/services/payments/**"]
+    workload: payments
+    max_autonomy: patch          # money: AI may propose fixes, never deploy them
+  shop-monolith:
+    namespace: shop
+    writable_paths: ["app/**"]   # the monolith's blast radius is the whole application
+    workload: shop-monolith
+    max_autonomy: canary

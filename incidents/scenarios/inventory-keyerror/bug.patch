@@ -1,0 +1,28 @@
+diff --git a/app/services/inventory/service.py b/app/services/inventory/service.py
+index f83e4c1..eb9114a 100644
+--- a/app/services/inventory/service.py
++++ b/app/services/inventory/service.py
+@@ -13,6 +13,9 @@ SEED_PRODUCTS = [
+     {"sku": "PUMP-7", "name": "Hydraulic pump P7", "stock": 25, "price_cents": 45900},
+ ]
+ 
++# Unit prices change rarely: keep them in memory to save a database round trip.
++_PRICE_CACHE: dict[str, int] = {}
++
+ 
+ def _db_error(exc: SQLAlchemyError) -> DependencyUnavailable:
+     return DependencyUnavailable("database", type(exc).__name__)
+@@ -54,11 +57,12 @@ def reserve(engine: Engine, sku: str, quantity: int) -> dict:
+         raise NotFound(f"unknown product {sku}")
+     if result.rowcount == 0:
+         raise Conflict(f"only {row['stock']} items of {sku} in stock")
++    _PRICE_CACHE[sku] = row["price_cents"]
+     return {
+         "sku": sku,
+         "reserved": quantity,
+         "remaining": row["stock"],
+-        "unit_price_cents": row["price_cents"],
++        "unit_price_cents": _PRICE_CACHE[quantity],
+     }
+ 
+ 

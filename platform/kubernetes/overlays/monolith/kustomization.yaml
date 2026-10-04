@@ -1,0 +1,7 @@
+# One process, one namespace, one database: the large blast radius (baseline for the experiment).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../apps/monolith
+  - ../../safeops   # the SafeOps control plane (PDF 3)

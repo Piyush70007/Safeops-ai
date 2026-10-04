@@ -1,0 +1,12 @@
+# Runtime dependencies (pinned; pip-audit checks them in CI)
+fastapi==0.142.2
+uvicorn==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+SQLAlchemy==2.1.3
+psycopg[binary]==3.3.6
+httpx==0.28.1
+prometheus-client==0.26.0
+PyYAML==6.0.3
+PyJWT==2.15.1
+kubernetes==36.0.3

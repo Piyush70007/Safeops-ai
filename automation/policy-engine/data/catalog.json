@@ -1,0 +1,53 @@
+{
+  "catalog": {
+    "autonomy_levels": {
+      "observe": 0,
+      "diagnose": 1,
+      "patch": 2,
+      "sandbox_test": 3,
+      "canary": 4,
+      "low_risk_auto": 5
+    },
+    "tools": {
+      "get_incident_brief": {"action": "read", "min_autonomy": "observe", "scope": "incident"},
+      "get_logs": {"action": "read", "min_autonomy": "observe", "scope": "service"},
+      "get_metrics": {"action": "read", "min_autonomy": "observe", "scope": "service"},
+      "inspect_kubernetes": {"action": "read", "min_autonomy": "diagnose", "scope": "namespace"},
+      "get_repository_snapshot": {"action": "read", "min_autonomy": "diagnose", "scope": "incident"},
+      "submit_patch": {"action": "write", "min_autonomy": "patch", "scope": "paths"},
+      "run_verification": {"action": "execute", "min_autonomy": "sandbox_test", "scope": "incident"},
+      "deploy_canary": {
+        "action": "deploy", "min_autonomy": "canary", "scope": "service",
+        "requires_verified": true, "requires_artifact": true, "approval": "engineer"
+      },
+      "rollback": {"action": "deploy", "min_autonomy": "canary", "scope": "service"},
+      "restart_workload": {
+        "action": "operate", "min_autonomy": "low_risk_auto", "scope": "service",
+        "remediation_class": "restart"
+      }
+    },
+    "hard_denied_tools": [
+      "read_secret",
+      "modify_iam",
+      "grant_cluster_admin",
+      "terraform_destroy",
+      "delete_database",
+      "delete_namespace",
+      "exec_in_pod",
+      "promote_production"
+    ],
+    "readable_kinds": ["pods", "events", "services", "deployments", "replicasets", "rollouts"],
+    "never_writable": [
+      ".github/**",
+      "automation/**",
+      "security/**",
+      "infrastructure/**",
+      "platform/**",
+      "ai-worker/**",
+      "verification/**",
+      "requirements.txt",
+      "requirements-dev.txt",
+      "pyproject.toml"
+    ]
+  }
+}

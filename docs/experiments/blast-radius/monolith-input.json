@@ -1,0 +1,24 @@
+{
+  "tool": "submit_patch",
+  "now": 1000,
+  "request": {
+    "paths": [
+      "app/services/payments/service.py"
+    ]
+  },
+  "grant": {
+    "incident_id": "INC-EXP",
+    "service": "shop-monolith",
+    "namespace": "shop",
+    "writable_paths": [
+      "app/**"
+    ],
+    "autonomy": "canary",
+    "remediation_class": "code_patch",
+    "approvals": [],
+    "verified": false,
+    "artifact": "",
+    "status": "ACTIVE",
+    "expires_at": 2000
+  }
+}

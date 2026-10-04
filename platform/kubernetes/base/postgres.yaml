@@ -1,0 +1,59 @@
+# PostgreSQL for the lab: one instance, one database AND one user per service, so a leaked
+# inventory credential cannot read payments data. Passwords come from create-secrets.sh.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: postgres-init, namespace: data}
+data:
+  01-databases.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    for svc in orders inventory payments shop; do
+      var="$(echo "${svc}" | tr a-z A-Z)_DB_PASSWORD"
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-SQL
+        CREATE ROLE ${svc} LOGIN PASSWORD '${!var}';
+        CREATE DATABASE ${svc} OWNER ${svc};
+        REVOKE ALL ON DATABASE ${svc} FROM PUBLIC;
+    SQL
+    done
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgres, namespace: data, labels: {app.kubernetes.io/name: postgres}}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: postgres}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: postgres}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: postgres:17-alpine        # pin to a digest once you have verified it
+          ports: [{name: postgres, containerPort: 5432}]
+          envFrom: [{secretRef: {name: postgres-credentials}}]
+          env: [{name: PGDATA, value: /var/lib/postgresql/data/pgdata}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "postgres"]}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: init, mountPath: /docker-entrypoint-initdb.d}
+      volumes:
+        - name: init
+          configMap: {name: postgres-init, defaultMode: 0555}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: data}
+spec:
+  selector: {app.kubernetes.io/name: postgres}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]

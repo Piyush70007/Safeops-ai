@@ -1,0 +1,5 @@
+# Injected fault: payments stops accepting traffic from orders.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: lab-fault-deny-all, namespace: payments}
+spec: {podSelector: {}, policyTypes: [Ingress]}

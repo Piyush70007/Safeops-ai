@@ -1,0 +1,145 @@
+# SafeOps control plane + OPA. The control plane gets namespaced roles only: read in the app
+# namespaces, patch Rollouts (canary image), and create worker Jobs. No cluster-wide rights.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: safeops-control, namespace: safeops}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: opa, namespace: safeops, labels: {app.kubernetes.io/name: opa}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: opa}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: opa}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: opa
+          image: openpolicyagent/opa:1.21.1-static
+          args: ["run", "--server", "--addr", "0.0.0.0:8181", "--log-level", "error",
+                 "/policies/authz.rego", "/data/catalog.json"]
+          ports: [{name: http, containerPort: 8181}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: policies, mountPath: /policies}
+            - {name: data, mountPath: /data}
+      volumes:
+        - {name: policies, configMap: {name: opa-policies}}
+        - {name: data, configMap: {name: opa-data}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: opa, namespace: safeops}
+spec:
+  selector: {app.kubernetes.io/name: opa}
+  ports: [{name: http, port: 8181, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: safeops-control, namespace: safeops, labels: {app.kubernetes.io/name: safeops-control}}
+spec:
+  replicas: 1   # state is in memory + audit file: one replica by design in the lab
+  selector: {matchLabels: {app.kubernetes.io/name: safeops-control}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: safeops-control}}
+    spec:
+      serviceAccountName: safeops-control
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: clone
+          image: safeops-control:dev
+          command: ["sh", "-c", "git clone --quiet \"$SAFEOPS_REPO_URL\" /repo/src"]
+          envFrom: [{configMapRef: {name: safeops-control}}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts: [{name: repo, mountPath: /repo}]
+      containers:
+        - name: control
+          image: safeops-control:dev
+          ports: [{name: http, containerPort: 8080}]
+          envFrom:
+            - configMapRef: {name: safeops-control}
+            - secretRef: {name: safeops-control}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: "2", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: repo, mountPath: /repo}
+            - {name: evidence, mountPath: /evidence}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: repo, emptyDir: {}}
+        - {name: evidence, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: safeops-control, namespace: safeops}
+data:
+  SAFEOPS_REPO_URL: https://github.com/YOUR-USER/safeops-ai.git
+  SAFEOPS_REPO_PATH: /repo/src
+  SAFEOPS_BASE_REF: origin/main
+  SAFEOPS_AUDIT_PATH: /evidence/audit.jsonl
+  SAFEOPS_OPA_URL: http://opa.safeops.svc:8181
+  SAFEOPS_PROMETHEUS_URL: http://kube-prometheus-stack-prometheus.observability.svc:9090
+  SAFEOPS_LOKI_URL: http://loki.observability.svc:3100
+  SAFEOPS_KUBERNETES: "true"
+  SAFEOPS_LAUNCHER: kubernetes
+  SAFEOPS_WORKER_IMAGE: safeops-ai-worker:dev
+  SAFEOPS_GATEWAY_URL_FOR_WORKERS: http://safeops-control.safeops.svc:8080
+  SAFEOPS_N8N_WEBHOOK_URL: ""
+  HOME: /tmp
+---
+apiVersion: v1
+kind: Service
+metadata: {name: safeops-control, namespace: safeops, labels: {app.kubernetes.io/name: safeops-control}}
+spec:
+  type: NodePort
+  selector: {app.kubernetes.io/name: safeops-control}
+  ports: [{name: http, port: 8080, targetPort: http, nodePort: 30880}]
+---
+# Worker namespace guardrails: quota, defaults, and the right for the control plane to start Jobs.
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: workers, namespace: safeops-workers}
+spec:
+  hard: {pods: "3", requests.cpu: "4", requests.memory: 6Gi, limits.cpu: "6", limits.memory: 8Gi}
+---
+apiVersion: v1
+kind: LimitRange
+metadata: {name: workers, namespace: safeops-workers}
+spec:
+  limits:
+    - type: Container
+      default: {cpu: "2", memory: 2Gi}
+      defaultRequest: {cpu: 500m, memory: 1Gi}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: launch-workers, namespace: safeops-workers}
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, get, list, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: launch-workers, namespace: safeops-workers}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: launch-workers}
+subjects: [{kind: ServiceAccount, name: safeops-control, namespace: safeops}]

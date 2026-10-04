@@ -1,0 +1,6 @@
+# PDF 1 and 2: the shop as microservices, without the SafeOps control plane yet.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../apps/microservices

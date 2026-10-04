@@ -1,0 +1,107 @@
+# Every change: tests, policy, security gates, manifests, IaC, images. Any failure blocks merge.
+# Hardening tip: pin each action to a full commit SHA (Dependabot can keep them current).
+name: ci
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions: {contents: read}
+env:
+  OPA_VERSION: "1.21.1"
+  KUSTOMIZE_VERSION: "5.7.1"
+  KUBECONFORM_VERSION: "0.8.0"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements-dev.txt
+      - name: Install OPA
+        run: |
+          mkdir -p "$HOME/bin"
+          BASE=https://github.com/open-policy-agent/opa/releases/download
+          curl -sSfL -o "$HOME/bin/opa" "$BASE/v${OPA_VERSION}/opa_linux_amd64_static"
+          chmod +x "$HOME/bin/opa" && echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: ruff check . && ruff format --check .
+      - run: opa fmt --list --fail automation/policy-engine/policies
+      - name: Tests (app, policy, control plane, adversarial suite, demos A-C)
+        run: pytest --cov=app --cov=automation --cov-fail-under=85
+
+  security:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}       # secret scanning needs the whole history
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements-dev.txt
+      - name: Secrets (Gitleaks, full history)
+        run: docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.30.1 git --redact --verbose .
+      - name: Dependencies (pip-audit)
+        run: pip-audit -r requirements.txt --strict
+      - name: Code (Bandit)
+        run: bandit -q -r app automation ai-worker verification incidents -x '*/tests/*' -ll
+
+  manifests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kustomize and kubeconform
+        run: |
+          mkdir -p "$HOME/bin" && cd "$HOME/bin"
+          K=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}
+          curl -sSfL "$K/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | tar xz
+          C=https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}
+          curl -sSfL "$C/kubeconform-linux-amd64.tar.gz" | tar xz
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Build and validate both architectures (strict, with CRD schemas)
+        run: |
+          for overlay in microservices monolith; do
+            kustomize build "platform/kubernetes/overlays/$overlay" > "/tmp/$overlay.yaml"
+          done
+          CRDS='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main'
+          kubeconform -strict -summary -kubernetes-version 1.33.0 -schema-location default \
+            -schema-location "$CRDS/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            /tmp/microservices.yaml /tmp/monolith.yaml
+
+  iac:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: {terraform_version: "1.16.4"}
+      - run: terraform fmt -check -recursive infrastructure
+      - run: |
+          for dir in infrastructure/terraform/bootstrap infrastructure/terraform/environments/lab; do
+            terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+            terraform -chdir="$dir" validate
+          done
+      - name: Checkov
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo bridgecrew/checkov:3.3.21 \
+            -d infrastructure --framework terraform --compact --quiet
+
+  images:
+    needs: [test, security, manifests, iac]
+    runs-on: ubuntu-24.04
+    permissions: {contents: read, packages: write}
+    strategy:
+      matrix: {image: [shop, control, worker]}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/safeops-${{ matrix.image }}:${GITHUB_SHA::12}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          docker build -f "platform/docker/${{ matrix.image }}.Dockerfile" --build-arg "GIT_SHA=${GITHUB_SHA::12}" -t "$IMAGE" .
+      - name: Scan (Trivy, HIGH/CRITICAL with a fix available)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.74.0 \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress "$IMAGE"
+      - name: Push (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE"

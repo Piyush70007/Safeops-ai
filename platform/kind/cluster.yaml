@@ -1,0 +1,20 @@
+# Local Kubernetes cluster for SafeOps AI: kind v0.33.0 (NetworkPolicy works out of the box).
+#   platform/kind/create-with-registry.sh   (cluster + local registry on localhost:5001)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: safeops
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # orders API (NodePort)      -> http://localhost:8080
+        hostPort: 8080
+      - containerPort: 30300   # Grafana (NodePort)         -> http://localhost:3000
+        hostPort: 3000
+      - containerPort: 30880   # SafeOps control plane      -> http://localhost:8088
+        hostPort: 8088
+  - role: worker
+  - role: worker

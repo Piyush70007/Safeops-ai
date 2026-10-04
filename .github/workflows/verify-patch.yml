@@ -1,0 +1,35 @@
+# Verification of AI patch branches (safeops/<incident-id>/<service>).
+# The allowed paths are read from the BASE branch: a patch must never be able to widen its scope.
+name: verify-ai-patch
+on:
+  pull_request:
+permissions: {contents: read}
+jobs:
+  gates:
+    if: startsWith(github.head_ref, 'safeops/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements-dev.txt
+      - name: Scope from the trusted base branch
+        run: |
+          SERVICE="${GITHUB_HEAD_REF##*/}"
+          git show "origin/${GITHUB_BASE_REF}:automation/controlplane/services.yaml" > /tmp/services.yaml
+          ALLOWED=$(SERVICE="$SERVICE" python -c "import os, yaml
+          services = yaml.safe_load(open('/tmp/services.yaml'))['services']
+          print(' '.join(services[os.environ['SERVICE']]['writable_paths']))")
+          echo "ALLOWED=$ALLOWED" >> "$GITHUB_ENV"
+      - name: Verification gates (scope, dependencies, secrets, lint, SAST, tests)
+        run: python -m verification.run_gates --base "origin/${GITHUB_BASE_REF}" --allowed $ALLOWED
+      - name: Load gate (monolith with SQLite, 60 s at 10 rps)
+        run: |
+          SERVICE_MODE=monolith DATABASE_URL=sqlite+pysqlite:///./ci.db \
+            uvicorn --factory app.main:build --port 8000 &
+          sleep 5
+          python load-tests/traffic.py --base-url http://127.0.0.1:8000 --duration 60 --rps 10 --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: verification-report, path: verification-report.json}

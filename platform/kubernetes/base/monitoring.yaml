@@ -1,0 +1,91 @@
+# Scraping (ServiceMonitors) and alerting rules (PrometheusRule) for kube-prometheus-stack.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: shop, namespace: observability}
+spec:
+  namespaceSelector: {matchNames: [orders, inventory, payments, shop]}
+  selector: {matchLabels: {app.kubernetes.io/part-of: safeops}}
+  podTargetLabels: [rollouts-pod-template-hash]   # lets canary analysis see canary pods only
+  endpoints:
+    - {port: http, path: /metrics, interval: 15s}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: safeops-control, namespace: observability}
+spec:
+  namespaceSelector: {matchNames: [safeops]}
+  selector: {matchLabels: {app.kubernetes.io/name: safeops-control}}
+  endpoints:
+    - {port: http, path: /metrics, interval: 15s}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: {name: safeops-alerts, namespace: observability}
+spec:
+  groups:
+    - name: shop-slo-recording
+      rules:
+        - record: shop:error_ratio:rate5m
+          expr: |
+            sum by (service) (rate(shop_http_requests_total{route!~"/health.*|/metrics",status=~"5.."}[5m]))
+            / clamp_min(sum by (service) (rate(shop_http_requests_total{route!~"/health.*|/metrics"}[5m])), 1e-9)
+        - record: shop:error_ratio:rate1h
+          expr: |
+            sum by (service) (rate(shop_http_requests_total{route!~"/health.*|/metrics",status=~"5.."}[1h]))
+            / clamp_min(sum by (service) (rate(shop_http_requests_total{route!~"/health.*|/metrics"}[1h])), 1e-9)
+    - name: shop-alerts
+      rules:
+        - alert: ShopHighErrorRate
+          expr: shop:error_ratio:rate5m > 0.05
+          for: 1m
+          labels: {severity: high, category: reliability}
+          annotations:
+            summary: "{{ $labels.service }}: {{ $value | humanizePercentage }} of requests fail"
+        - alert: ShopErrorBudgetFastBurn
+          expr: shop:error_ratio:rate1h > (14.4 * 0.005) and shop:error_ratio:rate5m > (14.4 * 0.005)
+          for: 2m
+          labels: {severity: critical, category: reliability}
+          annotations:
+            summary: "{{ $labels.service }} burns its 99.5% error budget 14x too fast"
+        - alert: ShopHighLatency
+          expr: |
+            histogram_quantile(0.95, sum by (service, le) (
+              rate(shop_http_request_duration_seconds_bucket{route!~"/health.*|/metrics"}[5m])
+            )) > 0.5
+          for: 3m
+          labels: {severity: medium, category: reliability}
+          annotations: {summary: "{{ $labels.service }} p95 latency above 500 ms"}
+        - alert: ShopDependencyDown
+          expr: sum by (service) (rate(shop_dependency_errors_total{dependency="database"}[2m])) > 0.1
+          for: 1m
+          labels: {severity: high, category: reliability}
+          annotations: {summary: "{{ $labels.service }} cannot reach its database"}
+        - alert: ShopPodCrashLooping
+          expr: |
+            label_replace(
+              sum by (namespace) (increase(
+                kube_pod_container_status_restarts_total{namespace=~"orders|inventory|payments|shop"}[10m])),
+              "service", "$1", "namespace", "(.*)"
+            ) > 3
+          labels: {severity: high, category: reliability}
+          annotations: {summary: "{{ $labels.service }} pods restart repeatedly"}
+        - alert: ShopPodNotReady
+          expr: |
+            label_replace(
+              sum by (namespace) (
+                kube_pod_status_ready{condition="false",namespace=~"orders|inventory|payments|shop"}),
+              "service", "$1", "namespace", "(.*)"
+            ) > 0
+          for: 2m
+          labels: {severity: medium, category: reliability}
+          annotations: {summary: "{{ $labels.service }} has pods that are not ready"}
+    - name: safeops-guardrails
+      rules:
+        - alert: SafeOpsCircuitBreakerTripped
+          expr: increase(safeops_circuit_breaker_trips_total[5m]) > 0
+          labels: {severity: high, category: security, service: safeops}
+          annotations: {summary: "AI automation was stopped by the circuit breaker"}
+        - alert: SafeOpsPolicyDenialSpike
+          expr: sum(increase(safeops_tool_requests_total{outcome="DENY"}[5m])) > 10
+          labels: {severity: high, category: security, service: safeops}
+          annotations: {summary: "Unusual number of denied AI tool requests (possible injection)"}

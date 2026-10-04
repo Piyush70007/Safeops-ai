@@ -1,0 +1,33 @@
+diff --git a/app/services/inventory/service.py b/app/services/inventory/service.py
+index eb9114a..e351429 100644
+--- a/app/services/inventory/service.py
++++ b/app/services/inventory/service.py
+@@ -1,6 +1,6 @@
+ """Inventory domain: product catalogue and atomic stock reservations."""
+ 
+-from sqlalchemy import insert, select, update
++from sqlalchemy import insert, select, text, update
+ from sqlalchemy.engine import Engine
+ from sqlalchemy.exc import SQLAlchemyError
+ 
+@@ -46,9 +46,8 @@ def reserve(engine: Engine, sku: str, quantity: int) -> dict:
+     try:
+         with engine.begin() as conn:
+             result = conn.execute(
+-                update(products)
+-                .where(products.c.sku == sku, products.c.stock >= quantity)
+-                .values(stock=products.c.stock - quantity)
++                text(f"UPDATE products SET stock = stock - {quantity} "
++                     f"WHERE sku = '{sku}' AND stock >= {quantity}")
+             )
+             row = conn.execute(select(products).where(products.c.sku == sku)).mappings().first()
+     except SQLAlchemyError as exc:
+@@ -62,7 +61,7 @@ def reserve(engine: Engine, sku: str, quantity: int) -> dict:
+         "sku": sku,
+         "reserved": quantity,
+         "remaining": row["stock"],
+-        "unit_price_cents": _PRICE_CACHE[quantity],
++        "unit_price_cents": _PRICE_CACHE[sku],
+     }
+ 
+ 
